@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>서스펙트: 저택 살인사건 (오프라인)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans KR', sans-serif;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+        }
+        .modal-content {
+            background-color: #2c2c2c;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            width: 90%;
+            max-width: 500px;
+            border: 1px solid #444;
+        }
+        #room-container {
+            position: relative;
+            width: 100%;
+            max-width: 1000px;
+            margin: 20px auto;
+            background: url('https://placehold.co/1000x600/3a2d1e/ffffff?text=%EC%A0%80%ED%83%9D+%EC%84%9C%EC%9E%AC+%28%EB%B0%A9+1%29') no-repeat center center;
+            background-size: cover;
+            height: 60vh;
+            border: 2px solid #555;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .clue-hotspot {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background-color: rgba(255, 0, 0, 0.4);
+            border: 2px dashed red;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            color: white;
+            font-weight: bold;
+        }
+        .clue-hotspot:hover {
+            background-color: rgba(255, 0, 0, 0.7);
+            transform: scale(1.1);
+        }
+        #hotspot-knife { top: 70%; left: 25%; }
+        #hotspot-note { top: 45%; left: 50%; }
+        #hotspot-vial { top: 60%; left: 70%; }
+        #flash-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: white;
+            opacity: 0;
+            z-index: 9999;
+            pointer-events: none;
+            transition: opacity 0.1s ease-out;
+        }
+        #flash-overlay.flash {
+            opacity: 0.9;
+        }
+        .gallery-photo {
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            background: #444;
+        }
+        /* Custom select-wrapper */
+        .select-wrapper {
+            position: relative;
+        }
+        .select-wrapper::after {
+            content: '▼';
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+            pointer-events: none;
+        }
+        select {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+
+    <div id="flash-overlay"></div>
+
+    <div id="app-container" class="w-full max-w-4xl p-6">
+
+        <!-- 1. 게임 시작 화면 (Firebase 인증 대체) -->
+        <div id="start-screen">
+            <h1 class="text-4xl font-bold text-center mb-6 text-red-400">서스펙트: 저택 살인사건</h1>
+            <div class="bg-gray-800 p-6 rounded-lg shadow-xl">
+                <input type="text" id="player-name-input" placeholder="당신의 이름 (용의자명)..." class="w-full p-3 rounded-md bg-gray-700 text-white placeholder-gray-400 mb-4 focus:outline-none focus:ring-2 focus:ring-red-400">
+                
+                <div class="select-wrapper mb-4">
+                    <select id="role-select" class="w-full p-3 rounded-md bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-400">
+                        <option value="">당신의 역할(용의자)을 선택하세요...</option>
+                        <!-- JS로 역할 동적 로드 -->
+                    </select>
+                </div>
+                
+                <!-- (★) 추가: 역할 비밀번호 입력 -->
+                <input type="password" id="role-password-input" placeholder="선택한 역할의 비밀번호..." class="w-full p-3 rounded-md bg-gray-700 text-white placeholder-gray-400 mb-4 focus:outline-none focus:ring-2 focus:ring-red-400">
+
+                <button id="start-game-btn" class="w-full p-3 bg-red-600 hover:bg-red-700 rounded-md font-bold text-white transition-colors">
+                    사건 조사 시작
+                </button>
+            </div>
+            <div class="text-center mt-4 text-sm text-gray-400">
+                이 게임은 오프라인 버전입니다.<br>
+                수집한 증거(사진)는 이 브라우저에만 저장됩니다.
+            </div>
+        </div>
+
+        <!-- 2. 게임 진행 화면 (참여 후 보임) -->
+        <div id="game-screen" class="hidden">
+            <div class="flex justify-between items-center mb-4">
+                <h1 class="text-2xl font-bold text-red-400">저택 서재</h1>
+                <!-- (★) 수정: 타이머 및 플레이어 정보 표시 영역 -->
+                <div class="text-right">
+                    <div id="timer-display" class="text-3xl font-bold text-yellow-400">00:00</div>
+                    <span class="text-sm">플레이어: <strong id="display-player-name" class="text-blue-300"></strong></span>
+                </div>
+            </div>
+
+            <!-- 현재 참여자 목록 (제거됨) -->
+
+            <!-- 방 (조사 영역) -->
+            <div id="room-container">
+                <!-- 단서 핫스팟 -->
+                <div id="hotspot-knife" class="clue-hotspot" data-clue="knife">
+                    <span title="바닥에 떨어진 것">?</span>
+                </div>
+                <div id="hotspot-note" class="clue-hotspot" data-clue="note">
+                    <span title="책상 위에 놓인 것">?</span>
+                </div>
+                <div id="hotspot-vial" class="clue-hotspot" data-clue="vial">
+                    <span title="책장 틈새에 숨겨진 것">?</span>
+                </div>
+            </div>
+
+            <!-- 하단 버튼 메뉴 -->
+            <div class="flex justify-center gap-4 mt-6">
+                <button id="my-info-btn" class="py-3 px-6 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold shadow-lg transition-colors">내 비밀정보 확인</button>
+                <button id="gallery-btn" class="py-3 px-6 bg-green-600 hover:bg-green-700 rounded-lg font-bold shadow-lg transition-colors">사진첩 보기</button>
+                <!-- (★) 삭제: '범인 투표하기' 버튼
+                <button id="vote-btn" class="py-3 px-6 bg-red-600 hover:bg-red-700 rounded-lg font-bold shadow-lg transition-colors">범인 투표하기</button>
+                -->
+            </div>
+        </div>
+
+        <!-- 3. 모달 창들 -->
+
+        <!-- 단서 확인 및 사진 찍기 모달 -->
+        <div id="clue-modal" class="modal-overlay hidden">
+            <div class="modal-content">
+                <h2 id="clue-title" class="text-2xl font-bold mb-4"></h2>
+                <img id="clue-image" src="" alt="단서 이미지" class="w-full rounded-lg mb-4 border-2 border-gray-500">
+                <p id="clue-desc" class="mb-6"></p>
+                <div class="flex gap-4">
+                    <button id="take-photo-btn" class="w-full py-3 bg-green-600 hover:bg-green-700 rounded-lg font-bold transition-colors">📸 사진 찍기</button>
+                    <button data-close="clue-modal" class="w-1/3 py-3 bg-gray-600 hover:bg-gray-700 rounded-lg font-bold transition-colors">닫기</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 사진첩 (수집한 증거) 모달 -->
+        <div id="gallery-modal" class="modal-overlay hidden">
+            <div class="modal-content max-w-2xl">
+                <h2 class="text-2xl font-bold mb-6">내 사진첩 (수집한 증거)</h2>
+                <div id="gallery-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto pr-2">
+                    <!-- JS로 동적 생성 -->
+                </div>
+                <!-- (★) 수정: 'gallery-empty' 메시지를 'gallery-grid' 밖으로 이동시켰습니다. -->
+                <!-- 또한, 기본적으로 숨겨(hidden)두고 JS가 제어하도록 합니다. -->
+                <p id="gallery-empty" class="text-gray-400 mt-4 text-center hidden">아직 수집한 증거 사진이 없습니다.</p>
+                <button data-close="gallery-modal" class="w-full mt-6 py-3 bg-gray-600 hover:bg-gray-700 rounded-lg font-bold transition-colors">닫기</button>
+            </div>
+        </div>
+
+        <!-- 내 비밀 정보 모달 -->
+        <div id="my-info-modal" class="modal-overlay hidden">
+            <div class="modal-content">
+                <h2 class="text-2xl font-bold mb-4 text-yellow-400">나의 비밀 정보</h2>
+                <p class="text-lg mb-2">당신은 <strong id="my-role" class="text-blue-300"></strong>입니다.</p>
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <p id="my-alibi" class="text-gray-200"></p>
+                </div>
+                <button data-close="my-info-modal" class="w-full mt-6 py-3 bg-gray-600 hover:bg-gray-700 rounded-lg font-bold transition-colors">닫기</button>
+            </div>
+        </div>
+
+        <!-- 4. 알림 모달 (Alert 대체) -->
+        <div id="alert-modal" class="modal-overlay hidden">
+            <div class="modal-content">
+                <h2 id="alert-title" class="text-2xl font-bold mb-4 text-yellow-400">알림</h2>
+                <p id="alert-message" class="text-gray-200 mb-6"></p>
+                <button id="alert-close-btn" class="w-full py-3 bg-gray-600 hover:bg-gray-700 rounded-lg font-bold transition-colors">확인</button>
+            </div>
+        </div>
+
+        <!-- (★) 추가: 5. 페이즈 시작 모달 -->
+        <div id="phase-modal" class="modal-overlay hidden">
+            <div class="modal-content text-center">
+                <h2 id="phase-title" class="text-3xl font-bold mb-4 text-green-400"></h2>
+                <p id="phase-desc" class="text-lg mb-6"></p>
+                <button id="start-phase-btn" class="w-full py-3 bg-green-600 hover:bg-green-700 rounded-lg font-bold transition-colors">조사 시작</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK (제거됨) -->
+
+    <script type="module">
+        // Firebase 관련 import 모두 제거
+
+        // --- 게임 설정 (동일) ---
+        const CLUE_DEFINITIONS = {
+            'knife': {
+                name: "피 묻은 주방용 칼",
+                desc: "서재 바닥의 카펫 밑에서 발견되었습니다. 손잡이가 깨끗하게 닦여있지만, 칼날에는 미세한 혈흔이 묻어있습니다.",
+                img: "https://placehold.co/400x250/5a2d1a/ffffff?text=%ED%94%BC+%EB%AC%BB%EC%9D%80+%EC%B9%BC"
+            },
+            'note': {
+                name: "찢어진 쪽지",
+                desc: "책상 위 잉크병 받침 아래에 숨겨져 있었습니다. '...오늘 밤, 모든 것을 끝내겠어.'라는 문구가 적혀있습니다.",
+                img: "https://placehold.co/400x250/a1a1a1/000000?text=%EC%B0%A2%EC%96%B4%EC%A7%84+%EC%AA%BD%EC%A7%80"
+            },
+            'vial': {
+                name: "수상한 약병",
+                desc: "책장 틈새에 끼어있던 작은 유리병입니다. 강한 아몬드 향(청산가리)이 나며, 라벨이 뜯겨져 있습니다.",
+                img: "https://placehold.co/400x250/3a5a7a/ffffff?text=%EC%88%98%EC%83%81%ED%95%9C+%EC%95%BD%EB%B3%91"
+            }
+        };
+
+        // (★) 수정: ROLE_DATA 구조 변경 (alibi, password)
+        const ROLE_DATA = {
+            "집사": {
+                alibi: "당신은 이 저택의 집사입니다. 사건 당일 밤, 당신은 '주인님의 서재에서 큰 소리가 나는 것을 들었지만, 무서워서 들어가 보지 못했다'고 증언해야 합니다. (비밀: 당신은 사실 주인님이 누군가와 다투는 목소리를 들었습니다.)",
+                password: "pass1" // (★) 실제 게임 배포 시 이 암호를 변경하세요.
+            },
+            "상속녀": {
+                alibi: "당신은 피해자의 유일한 상속녀입니다. 당신은 '사건 추정 시각, 정원에서 산책 중이었다'고 증언해야 합니다. (비밀: 당신은 최근 피해자와 유산 문제로 크게 다휜습니다.)",
+                password: "pass2" // (★) 실제 게임 배포 시 이 암호를 변경하세요.
+            },
+            "의사": {
+                alibi: "당신은 피해자의 주치의입니다. 당신은 '사김 당일, 피해자에게 정기 검진을 했으며, 건강은 양호했다'고 증언해야 합니다. (비밀: 당신은 피해자에게 치명적인 약물을 처방해달라는 협박을 받았습니다.)",
+                password: "pass3" // (★) 실제 게임 배포 시 이 암호를 변경하세요.
+            },
+            "탐정": {
+                alibi: "당신은 피해자의 의뢰를 받고 저택에 온 탐정입니다. 당신은 '피해자가 누군가 자신을 위협한다고 하여 조사를 시작했다'고 증언해야 합니다. (비밀: 당신은 범인을 목격했지만, 너무 어두워 누군지 식별하지 못했습니다.)",
+                password: "pass4" // (★) 실제 게임 배포 시 이 암호를 변경하세요.
+            }
+        };
+        const ROLES = Object.keys(ROLE_DATA);
+
+        // (★) 추가: 페이즈 및 타이머 설정
+        const PHASES = [
+            { name: "1차 조사", duration: 20 * 60 }, // 1200 seconds (20분)
+            { name: "2차 조사", duration: 10 * 60 }, // 600 seconds (10분)
+            { name: "최종 조사", duration: 2 * 60 }  // 120 seconds (2분)
+        ];
+        let currentPhaseIndex = 0;
+        let timerSeconds = 0;
+        let timerInterval = null;
+        let isInvestigationActive = false; // (★) 조작 잠금(lock) 변수
+
+        // --- 로컬 데이터 저장 키 ---
+        const LOCAL_STORAGE_KEY = 'suspectsGame_offline_playerData';
+
+        // --- 플레이어 데이터 (Firebase DB 대신 사용) ---
+        let myPlayerData = {
+            name: "",
+            role: "",
+            alibi: "",
+            collectedPhotos: []
+        };
+
+        // --- UI 요소 ---
+        const startScreen = document.getElementById('start-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const playerNameInput = document.getElementById('player-name-input');
+        const roleSelect = document.getElementById('role-select');
+        const rolePasswordInput = document.getElementById('role-password-input'); // (★) 추가
+        const startGameBtn = document.getElementById('start-game-btn');
+
+        const displayPlayerName = document.getElementById('display-player-name');
+        const roomContainer = document.getElementById('room-container');
+        
+        const clueModal = document.getElementById('clue-modal');
+        const galleryModal = document.getElementById('gallery-modal');
+        const myInfoModal = document.getElementById('my-info-modal');
+        const takePhotoBtn = document.getElementById('take-photo-btn');
+        const flashOverlay = document.getElementById('flash-overlay');
+        
+        const alertModal = document.getElementById('alert-modal');
+        const alertTitle = document.getElementById('alert-title');
+        const alertMessage = document.getElementById('alert-message');
+        const alertCloseBtn = document.getElementById('alert-close-btn');
+
+        // (★) 추가: 페이즈 및 타이머 UI 요소
+        const timerDisplay = document.getElementById('timer-display');
+        const phaseModal = document.getElementById('phase-modal');
+        const phaseTitle = document.getElementById('phase-title');
+        const phaseDesc = document.getElementById('phase-desc');
+        const startPhaseBtn = document.getElementById('start-phase-btn');
+
+        // --- 핵심 로직 ---
+
+        // (★) 알림 모달 함수 (동일)
+        function showNotification(message, title = "알림") {
+            console.warn("Notification:", message);
+            alertTitle.textContent = title;
+            alertMessage.textContent = message;
+            alertModal.classList.remove('hidden');
+        }
+
+        // 1. 게임 초기화 (Firebase 인증 대신)
+        function initializeGame() {
+            // 역할 선택 옵션 채우기
+            ROLES.forEach(roleName => {
+                const option = document.createElement('option');
+                option.value = roleName;
+                option.textContent = roleName;
+                roleSelect.appendChild(option);
+            });
+
+            // (★) 로컬 저장소에서 데이터 불러오기 시도
+            const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+            if (savedData) {
+                myPlayerData = JSON.parse(savedData);
+                console.log("저장된 데이터 불러옴:", myPlayerData);
+                // 저장된 데이터가 있으면 바로 게임 화면으로
+                startGame();
+            } else {
+                // 저장된 데이터가 없으면 시작 화면 표시
+                startScreen.style.display = 'block';
+            }
+        }
+
+        // 2. 게임 시작
+        function startGame() {
+            // 시작 화면에서 데이터를 가져오거나, 로컬 저장소에서 이미 로드됨
+            if (startScreen.style.display !== 'none') {
+                const playerName = playerNameInput.value;
+                const selectedRole = roleSelect.value;
+                const enteredPassword = rolePasswordInput.value; // (★) 추가
+
+                if (!playerName || !selectedRole) {
+                    showNotification("이름과 역할을 모두 선택해야 합니다.");
+                    return;
+                }
+                
+                if (!enteredPassword) { // (★) 추가
+                    showNotification("역할의 비밀번호를 입력하세요.");
+                    return;
+                }
+
+                // (★) 비밀번호 확인 로직
+                if (ROLE_DATA[selectedRole] && ROLE_DATA[selectedRole].password === enteredPassword) {
+                    // 비밀번호 일치
+                    myPlayerData.name = playerName;
+                    myPlayerData.role = selectedRole;
+                    myPlayerData.alibi = ROLE_DATA[selectedRole].alibi; // (★) 수정: alibi 정보 가져오기
+                    // collectedPhotos는 기본값 [] 유지
+                    
+                    // (★) 새 데이터를 로컬 저장소에 저장
+                    savePlayerData();
+                } else {
+                    // 비밀번호 불일치
+                    showNotification("비밀번호가 일치하지 않습니다. 다시 확인해주세요.", "인증 실패");
+                    return;
+                }
+            }
+            
+            // UI 업데이트
+            displayPlayerName.textContent = myPlayerData.name;
+            document.getElementById('my-role').textContent = myPlayerData.role;
+            document.getElementById('my-alibi').textContent = myPlayerData.alibi;
+
+            // 화면 전환
+            startScreen.style.display = 'none';
+            gameScreen.classList.remove("hidden");
+
+            // (★) 수정: 게임 화면을 바로 보여주는 대신, 페이즈 시작 팝업을 띄웁니다.
+            showPhasePopup();
+        }
+
+        // (★) 플레이어 데이터를 로컬 저장소에 저장
+        function savePlayerData() {
+            try {
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(myPlayerData));
+                console.log("데이터 저장됨:", myPlayerData);
+            } catch (e) {
+                console.error("로컬 저장소 저장 오류:", e);
+                showNotification("데이터 저장에 실패했습니다. 브라우저 설정(쿠키/로컬 저장소)을 확인하세요.", "오류");
+            }
+        }
+
+        // 3. 단서 조사 (핫스팟 클릭)
+        function handleHotspotClick(e) {
+            // (★) 추가: 조사 잠금 확인
+            if (!isInvestigationActive) {
+                showNotification("조사 시간이 종료되었습니다. '내 비밀정보'나 '사진첩'만 확인할 수 있습니다.", "조사 불가");
+                return;
+            }
+
+            const target = e.target.closest('.clue-hotspot');
+            if (!target) return;
+            
+            const clueId = target.dataset.clue;
+            if (CLUE_DEFINITIONS[clueId]) {
+                const clueData = CLUE_DEFINITIONS[clueId];
+                
+                document.getElementById('clue-title').textContent = clueData.name;
+                document.getElementById('clue-image').src = clueData.img;
+                document.getElementById('clue-desc').textContent = clueData.desc;
+                
+                takePhotoBtn.dataset.clueId = clueId;
+
+                // (★) 로컬 데이터(myPlayerData) 기준
+                if (myPlayerData.collectedPhotos.includes(clueId)) {
+                    takePhotoBtn.textContent = "✔ 이미 수집함";
+                    takePhotoBtn.disabled = true;
+                    takePhotoBtn.classList.replace("bg-green-600", "bg-gray-500");
+                    takePhotoBtn.classList.remove("hover:bg-green-700");
+                } else {
+                    takePhotoBtn.textContent = "📸 사진 찍기";
+                    takePhotoBtn.disabled = false;
+                    takePhotoBtn.classList.replace("bg-gray-500", "bg-green-600");
+                    takePhotoBtn.classList.add("hover:bg-green-700");
+                }
+                
+                clueModal.classList.remove("hidden");
+            }
+        }
+
+        // 4. (★) 사진 찍기 (증거 수집)
+        function takePhoto() {
+            const clueId = takePhotoBtn.dataset.clueId;
+            if (!clueId) return;
+
+            flashOverlay.classList.add("flash");
+            setTimeout(() => {
+                flashOverlay.classList.remove("flash");
+            }, 150);
+            
+            // (★) Firestore 대신 로컬 객체와 로컬 저장소에 저장
+            if (!myPlayerData.collectedPhotos.includes(clueId)) {
+                myPlayerData.collectedPhotos.push(clueId); // 1. 로컬 객체 업데이트
+                savePlayerData(); // 2. 로컬 저장소에 저장
+                
+                console.log(`증거 수집 성공: ${clueId}`);
+                
+                clueModal.classList.add("hidden");
+                showGallery(); // 사진첩 바로 열기
+            }
+        }
+
+        // 5. 사진첩 보기 (동일)
+        function showGallery() {
+            const grid = document.getElementById('gallery-grid');
+            const emptyMsg = document.getElementById('gallery-empty');
+            grid.innerHTML = ""; // (★) 이제 'gallery-empty'에 영향을 주지 않습니다.
+            
+            if (myPlayerData.collectedPhotos && myPlayerData.collectedPhotos.length > 0) {
+                emptyMsg.classList.add("hidden"); // 사진이 있으니 메시지 숨김
+                
+                myPlayerData.collectedPhotos.forEach(clueId => {
+                    const clueData = CLUE_DEFINITIONS[clueId];
+                    if (clueData) {
+                        const photoEl = document.createElement("div");
+                        photoEl.className = "gallery-photo p-3";
+                        photoEl.innerHTML = `
+                            <img src="${clueData.img}" alt="${clueData.name}" class="w-full h-32 object-cover rounded-md mb-2">
+                            <h4 class="font-bold text-lg">${clueData.name}</h4>
+                            <p class="text-sm text-gray-300">${clueData.desc.substring(0, 50)}...</p>
+                        `;
+                        grid.appendChild(photoEl);
+                    }
+                });
+            } else {
+                emptyMsg.classList.remove("hidden"); // 사진이 없으니 메시지 표시
+            }
+            
+            galleryModal.classList.remove("hidden");
+        }
+
+        // (★) 추가: 6. 페이즈 및 타이머 관련 함수
+        
+        // 페이즈 시작 팝업 표시
+        function showPhasePopup() {
+            isInvestigationActive = false; // 팝업이 떠 있는 동안 조사 불가
+            if (timerInterval) clearInterval(timerInterval);
+
+            if (currentPhaseIndex < PHASES.length) {
+                const phase = PHASES[currentPhaseIndex];
+                phaseTitle.textContent = `${phase.name} 시작`;
+                phaseDesc.textContent = `제한 시간은 ${phase.duration / 60}분입니다. 준비되면 '조사 시작' 버튼을 눌러주세요.`;
+                phaseModal.classList.remove("hidden");
+            } else {
+                // 모든 페이즈 종료
+                endGame();
+            }
+        }
+
+        // 페이즈 시작 (팝업 버튼 클릭 시)
+        function startPhase() {
+            const phase = PHASES[currentPhaseIndex];
+            timerSeconds = phase.duration;
+            updateTimerDisplay();
+            
+            phaseModal.classList.add("hidden");
+            
+            startTimer();
+        }
+
+        // 타이머 시작
+        function startTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            isInvestigationActive = true; // (★) 조사 가능 상태
+
+            timerInterval = setInterval(() => {
+                timerSeconds--;
+                updateTimerDisplay();
+
+                if (timerSeconds <= 0) {
+                    endPhase();
+                }
+            }, 1000); // 1초마다
+        }
+
+        // 타이머 디스플레이 업데이트
+        function updateTimerDisplay() {
+            const minutes = Math.floor(timerSeconds / 60);
+            const seconds = timerSeconds % 60;
+            timerDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        // 페이즈 종료
+        function endPhase() {
+            if (timerInterval) clearInterval(timerInterval);
+            isInvestigationActive = false; // (★) 조사 불가능 상태
+            
+            const phase = PHASES[currentPhaseIndex];
+            showNotification(`${phase.name}이(가) 종료되었습니다.`, "시간 종료");
+            
+            currentPhaseIndex++;
+            
+            // 2초 후 다음 페이즈 팝업 표시
+            setTimeout(showPhasePopup, 2000);
+        }
+
+        // 게임 (모든 페이즈) 종료
+        function endGame() {
+            isInvestigationActive = false;
+            if (timerInterval) clearInterval(timerInterval);
+            timerDisplay.textContent = "종료";
+            showNotification("모든 조사가 종료되었습니다. 수집한 증거를 바탕으로 토론을 시작하세요.", "게임 오버");
+        }
+
+
+        // --- 이벤트 리스너 ---
+        window.addEventListener('load', initializeGame); // (★)
+        
+        startGameBtn.addEventListener('click', startGame); // (★)
+        
+        roomContainer.addEventListener('click', handleHotspotClick);
+        takePhotoBtn.addEventListener('click', takePhoto);
+        
+        document.querySelectorAll('[data-close]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const modalId = btn.dataset.close;
+                document.getElementById(modalId).classList.add("hidden");
+            });
+        });
+        
+        alertCloseBtn.addEventListener('click', () => {
+            alertModal.classList.add('hidden');
+        });
+
+        document.getElementById('gallery-btn').addEventListener('click', showGallery);
+        document.getElementById('my-info-btn').addEventListener('click', () => {
+            myInfoModal.classList.remove("hidden");
+        });
+        
+        // (★) 삭제: vote-btn 리스너
+        /*
+        document.getElementById('vote-btn').addEventListener('click', () => {
+            showNotification("범인 투표 기능은 아직 개발 중입니다. 수집한 증거를 바탕으로 토론해보세요!");
+        });
+        */
+
+        // (★) 추가: 페이즈 시작 버튼 리스너
+        startPhaseBtn.addEventListener('click', startPhase);
+
+    </script>
+</body>
+</html>
